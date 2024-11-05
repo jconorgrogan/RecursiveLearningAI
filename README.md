@@ -1,5 +1,5 @@
 # RecursiveLearningAI
-Really quick-and-dirty example of AI recursive learning. Proof of concept using only one request. Would love if more generalizable workflows are made. You can see that a lot of features im working on are dormant in the file itself. 
+Really quick-and-dirty example of AI recursive learning. Proof of concept using only one request (Hardcoded example on finding a sentence that isnt in the bible, which o1 struggles with. Would love if more generalizable workflows are made. You can see that a lot of features im working on are dormant in the file itself. 
 
 Insert your OpenAI key to run and try it. 
 
