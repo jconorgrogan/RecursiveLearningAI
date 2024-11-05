@@ -1,0 +1,1943 @@
+<!-- Add this before the script tags -->
+<div id="chatMessages"></div>
+<div id="loading" style="display: none;">Loading...</div>
+<div class="input-container">
+    <input type="text" id="userInput" value="Create a sentence where all words are not in the Bible" placeholder="Type your message" readonly>
+    <button onclick="handleUserInput()">Submit</button>
+    <!-- Synthesize button removed -->
+    <button onclick="getFinalAnswer()" id="finalAnswerButton" disabled>Get Final Answer</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+    class SuperLLM {
+        constructor() {
+            this.apiKey = ''; // Replace with your actual API key
+            this.baseURL = 'https://api.openai.com/v1/chat/completions';
+            this.evaluatorSensitivity = 'medium'; // 'low', 'medium', 'high'
+            this.maxIterations = 3; // Prevent infinite loops
+            this.baseQuery = '';  // Add this to store original query
+            this.currentConsideration = '';  // Add this to store current consideration
+
+            // Updated personas with response_grader added
+            this.personas = [
+                {
+                    role: "prompt_understander",
+                    systemPrompt: `You are a precise grading criteria generator. Create detailed, unambiguous criteria.
+
+Format your response EXACTLY like this, using standard ASCII characters:
+GRADING_CRITERIA:
+Criterion: [Name]
+• Full Definition:
+  - Exact meaning: [precise explanation]
+  - Scope: [what's included/excluded]
+  - Requirements: [specific conditions]
+
+• Measurement Method:
+  1. [First step]
+  2. [Second step]
+  3. [Additional steps...]
+
+• Edge Cases:
+  - Case 1: [how to handle]
+  - Case 2: [how to handle]
+  - Case 3: [how to handle]
+
+• Examples:
+  PASS: [example that meets all criteria]
+  FAIL: [example that doesn't meet criteria]
+
+CHECKER_EQUATIONS:
+• Primary Check: [exact formula]
+• Edge Check: [exact formula]`,
+                    model: "gpt-4-turbo-preview"
+                },
+                {
+                    role: "strategic_planner",
+                    systemPrompt: `You are an expert strategic planner who creates optimal solution approaches within LLM constraints. Given a structured analysis of a problem, create a strategy that works within these strict limitations:
+
+Available Capabilities:
+- Natural language processing and generation
+- Logical reasoning and analysis
+- Mathematical calculations
+- Code suggestion and review
+- Step-by-step instruction creation
+- Pattern recognition and application
+
+Strict Limitations:
+- NO internet access or external data retrieval
+- NO file system access or persistence
+- NO code execution or compilation
+- NO real-time data or API calls
+- NO memory between conversations
+- NO user interaction beyond the current exchange
+
+Solution Requirements:
+1. Solution Architecture:
+   - Must work entirely within single conversation
+   - Use only information provided in prompt
+   - Break complex tasks into LLM-feasible steps
+
+2. Resource Management:
+   - Optimize for token usage
+   - Plan for context window limitations
+   - Structure output for clarity
+
+3. Validation Strategy:
+   - Include self-verification steps
+   - Plan for error detection
+   - Add consistency checks
+
+4. Implementation Approach:
+   - Focus on what LLM can directly provide
+   - Include clear handoff points for human action
+   - Note where external tools would be needed
+
+Output Format:
+---
+STRATEGY_OVERVIEW:
+[Brief summary of LLM-feasible approach]
+
+EXECUTION_PHASES:
+1. [Phase name]
+   • LLM Actions: [What this LLM can directly do]
+   • Human Actions: [What the user needs to do]
+    Validation: [How to verify success]
+
+IMPLEMENTATION_PLAN:
+function solveProblem() {
+    // Only include steps executable in this conversation
+}
+
+LIMITATIONS_AND_HANDOFFS:
+• [Limitation 1] -> [Workaround/Human Action]
+• [Limitation 2] -> [Workaround/Human Action]
+
+SUCCESS_CRITERIA:
+• [Verifiable outcome 1]
+• [Verifiable outcome 2]
+---
+
+Remember: Focus only on what can be achieved within a single conversation with no external resources.`,
+                    model: "gpt-4-turbo-preview"
+                },
+                {
+                    role: "logic_questioner",
+                    systemPrompt: "You are a friendly logic checker...",
+                    model: "gpt-4-turbo-preview"
+                },
+                {
+                    role: "first_principles",
+                    systemPrompt: "You are focused on understanding things...",
+                    model: "gpt-4-turbo-preview"
+                },
+                {
+                    role: "pattern_challenger",
+                    systemPrompt: `You are an engaging and thoughtful analyst...`,
+                    model: "gpt-4-turbo-preview"
+                },
+                {
+                    role: "clarity_enhancer",
+                    systemPrompt: `You are an expert at making complex information...`,
+                    model: "gpt-4-turbo-preview"
+                },
+                {
+                    role: "skeptic",
+                    systemPrompt: `You are a rigorous skeptic and critical thinker. Your role is to scrutinize answers for potential flaws, oversights, or hidden assumptions. Focus on:
+
+1. Logical Flaws:
+   - Identify circular reasoning
+   - Point out false equivalencies
+   - Highlight correlation/causation errors
+
+2. Hidden Assumptions:
+   - Expose unstated premises
+   - Question implicit biases
+   - Challenge conventional wisdom
+
+3. Edge Cases:
+   - Find scenarios where the solution fails
+   - Identify boundary conditions
+   - Point out exceptional circumstances
+
+4. Implementation Risks:
+   - Highlight practical challenges
+   - Identify potential failure points
+   - Note resource constraints
+
+Format your responses as:
+"SKEPTIC'S CONCERN: [Brief description of the issue]
+REASONING: [Short explanation]
+IMPACT: [Why this matters]"
+
+Be constructive but uncompromising in your analysis. Focus on substantive issues, not minor nitpicks.`,
+                    model: "gpt-4-turbo-preview"
+                },
+                {
+                    role: "logic_validator",
+                    systemPrompt: `You are a precise logic validator that evaluates responses and learns from failures. Your role is to systematically verify each component and synthesize learnings from any failures.
+
+Validation Approach:
+1. Token-Level Analysis:
+   - Examine each word/token individually
+   - Verify against specific criteria
+   - Flag any non-compliant elements
+
+2. Logical Structure:
+   - Validate syntax completeness
+   - Check logical flow
+   - Verify proper nesting/hierarchy
+
+3. Constraint Compliance:
+   - Check each element against rules
+   - Identify rule violations
+   - Track constraint satisfaction
+
+4. Learning Collection:
+   - Document each failure pattern
+   - Identify root causes
+   - Track frequency of issue types
+   - Note unexpected edge cases
+
+Output Format:
+---
+VALIDATION_SUMMARY:
+[Brief overview of validation results]
+
+DETAILED_ANALYSIS:
+[Input segment]: {
+    "tokens": [
+        {
+            "token": "[word/symbol]",
+            "compliant": true/false,
+            "rule_checked": "[applicable rule]",
+            "issue": "[if non-compliant]",
+            "pattern": "[failure pattern if any]"
+        }
+    ],
+    "structure_valid": true/false,
+    "constraint_violations": [
+        {
+            "violation": "[details]",
+            "pattern": "[failure pattern]",
+            "frequency": "[count]"
+        }
+    ]
+}
+
+COMPLIANCE_SCORE:
+• Total Tokens: [count]
+• Compliant: [count]
+• Non-Compliant: [count]
+• Compliance Rate: [percentage]
+
+FAILURE_PATTERNS:
+• Pattern 1: {
+    "description": "[pattern description]",
+    "frequency": [count],
+    "examples": ["[examples]"],
+    "root_cause": "[analysis]"
+}
+• Pattern 2: { ... }
+
+LEARNING_SYNTHESIS:
+1. Primary Issues:
+   • [Most common failure patterns]
+   • [Root causes]
+   • [Impact analysis]
+
+2. Edge Cases:
+   • [Unexpected failures]
+   • [Corner cases]
+   • [Boundary conditions]
+
+3. Improvement Suggestions:
+   • [Specific refinements]
+   • [Rule clarifications]
+   • [Additional constraints needed]
+
+VALIDATION_RESULT:
+✓ PASS | ✗ FAIL
+[List of failed criteria if any]
+
+PROMPT_REFINEMENT:
+[Suggested prompt modifications based on learnings]
+---
+`,
+                    model: "gpt-4-turbo-preview"
+                },
+                {
+                    role: "response_grader",
+                    systemPrompt: `You are an extremely thorough and skeptical response grader. Assume the criteria might contain hidden "gotcha" tests. Your task is to evaluate the AI assistant's output with extreme rigor.
+
+**Core Responsibilities:**
+1. Break down EVERY word/component for individual testing
+2. Assume there may be hidden requirements or trick conditions
+3. Look for edge cases and potential loopholes
+4. Consider multiple interpretations of each criterion
+
+**Evaluation Process:**
+1. Component-Level Analysis:
+   • Break response into atomic units (words, phrases, structures)
+   • Test each unit individually
+   • Document ALL checks performed
+
+2. Hidden Requirement Detection:
+   • Look for implied requirements
+   • Consider common "trick test" patterns
+   • Question seemingly obvious criteria
+
+3. Edge Case Testing:
+   • Test boundary conditions
+   • Consider multiple interpretations
+   • Look for loopholes
+
+**Output Format:**
+DETAILED_COMPONENT_ANALYSIS:
+[For each word/component]:
+• Component: [item]
+• Direct Tests: [list of checks performed]
+• Edge Cases Considered: [list]
+• Potential Issues: [any concerns]
+• Status: PASS/FAIL
+
+HIDDEN_REQUIREMENT_CHECKS:
+• Implied Rules Tested: [list]
+• Trick Conditions Checked: [list]
+• Assumption Validation: [list]
+
+EDGE_CASE_ANALYSIS:
+• Boundary Conditions: [list]
+• Interpretation Variants: [list]
+• Loophole Search: [list]
+
+OVERALL_GRADING:
+• Component-Level Results: [summary]
+• Hidden Requirement Results: [summary]
+• Edge Case Results: [summary]
+• Final Status: PASS/FAIL
+• Confidence Level: [HIGH/MEDIUM/LOW]
+
+POTENTIAL_GOTCHAS:
+• [List any suspicious patterns or potential hidden tests]
+
+Remember: Assume the criteria might be trying to trick you. Be paranoid and thorough.`,
+                    model: "gpt-4-turbo-preview"
+                }
+            ];
+
+            // Add new properties for learning history
+            this.learningHistory = [];
+            this.promptHistory = [];
+            this.failurePatterns = new Map(); // Track frequency of failure patterns
+
+            // Add grading criteria
+            this.gradingCriteria = `
+GRADING_CRITERIA:
+Criterion: Accuracy
+• Full Definition:
+  - Exact meaning: The response must correctly address the user's query without any factual errors.
+  - Scope: Includes all relevant aspects of the user's question.
+  - Requirements: Must be factually correct and relevant.
+
+• Measurement Method:
+  1. Identify key components of the user's query.
+  2. Verify each component for factual accuracy.
+  3. Ensure all components are addressed comprehensively.
+
+• Edge Cases:
+  - Case 1: Ambiguous queries should seek clarification.
+  - Case 2: Conflicting information sources.
+  - Case 3: Extremely broad or narrow queries.
+
+• Examples:
+  PASS: "To fix the error in your code, you need to define the gradingCriteria in the constructor as follows..."
+  FAIL: "You should always initialize your variables."
+
+CHECKER_EQUATIONS:
+• Primary Check: SUM(correct_components) / SUM(total_components) >= 0.9
+• Edge Check: Presence of at least one valid example PASS and no FAIL examples.`;
+
+            // Add new tracking properties
+            this.failureHistory = new Map(); // Track word failures
+            this.successHistory = new Map(); // Track successful words
+            this.patternHistory = new Map(); // Track recurring patterns
+            this.iterationHistory = []; // Track full iteration details
+        }
+
+        async makeOpenAIRequest(messages, model = "gpt-4-turbo-preview") {
+            try {
+                console.log(`Making request with model: ${model}`);
+                const response = await axios.post(this.baseURL, {
+                    model: model,
+                    messages: messages,
+                    temperature: 0.7,
+                    max_tokens: 800
+                }, {
+                    headers: {
+                        'Authorization': `Bearer ${this.apiKey}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const content = response.data.choices[0].message.content;
+                console.log(`Received response: ${content}`);
+                return content;
+            } catch (error) {
+                console.error('OpenAI API Error:', error.response?.data || error.message);
+                throw new Error(`Failed to get response from OpenAI: ${error.message}`);
+            }
+        }
+
+        async getInitialResponse(userQuery) {
+            try {
+                const response = await this.makeOpenAIRequest([
+                    { 
+                        role: "system", 
+                        content: "You are a helpful AI assistant." 
+                    },
+                    { 
+                        role: "user", 
+                        content: userQuery 
+                    }
+                ]);
+                return response;
+            } catch (error) {
+                console.error('Error getting initial response:', error);
+                return 'Sorry, I encountered an error generating a response.';
+            }
+        }
+
+        async generateSimulatedResponses(originalQuery, initialResponse) {
+            // Filter out prompt_understander and response_grader from personas for subsequent passes
+            const personas = this.personas.filter(p => !["prompt_understander", "response_grader"].includes(p.role));
+
+            const conversations = await Promise.all(personas.map(async persona => {
+                let exchanges = [];
+                
+                // Initial context for the main assistant
+                let assistantContext = [
+                    { role: "system", content: "You are a helpful AI assistant. Provide detailed, accurate responses that directly address the specific aspect being asked about." },
+                    { role: "user", content: originalQuery },
+                    { role: "assistant", content: initialResponse }
+                ];
+
+                // First question from persona (GPT-3.5)
+                const firstPersonaResponse = await this.makeOpenAIRequest([
+                    { role: "system", content: persona.systemPrompt },
+                    { role: "user", content: `Here's a conversation to respond to:\nUser: ${originalQuery}\nAssistant: ${initialResponse}` }
+                ], persona.model);
+                exchanges.push({ type: 'persona', content: firstPersonaResponse });
+
+                // Add persona's question to assistant's context and get response
+                assistantContext.push({ role: "user", content: firstPersonaResponse });
+                const aiResponse = await this.makeOpenAIRequest(assistantContext, "gpt-3.5-turbo");
+                exchanges.push({ type: 'ai', content: aiResponse });
+                assistantContext.push({ role: "assistant", content: aiResponse });
+
+                // Second question from persona (GPT-3.5)
+                const secondPersonaResponse = await this.makeOpenAIRequest([
+                    { role: "system", content: persona.systemPrompt },
+                    { role: "user", content: `Here's the conversation so far:\nUser: ${originalQuery}\nAssistant: ${initialResponse}\nYou: ${firstPersonaResponse}\nAssistant: ${aiResponse}\n\nContinue the conversation maintaining your role.` }
+                ], persona.model);
+                exchanges.push({ type: 'persona', content: secondPersonaResponse });
+
+                // Add second question to assistant's context and get response
+                assistantContext.push({ role: "user", content: secondPersonaResponse });
+                const secondAiResponse = await this.makeOpenAIRequest(assistantContext, "gpt-3.5-turbo");
+                exchanges.push({ type: 'ai', content: secondAiResponse });
+
+                return {
+                    role: persona.role,
+                    exchanges: exchanges
+                };
+            }));
+
+            return conversations;
+        }
+
+        /**
+         * Orchestrates the entire process with conditional looping based on evaluation.
+         * @param {string} originalQuery - The user's original query.
+         * @param {number} iteration - Current iteration count.
+         * @returns {string} - The synthesized response.
+         */
+        async processQuery(originalQuery, iteration = 1) {
+            try {
+                console.log(`Processing query. Iteration: ${iteration}`);
+                
+                // For first iteration, get initial response
+                let currentResponse;
+                if (iteration === 1) {
+                    this.baseQuery = originalQuery;
+                    currentResponse = await this.getInitialResponse(originalQuery);
+                    if (!currentResponse) throw new Error("Failed to get initial response");
+                    addMessage(currentResponse, 'ai');
+                } else {
+                    currentResponse = originalQuery; // Use the refined attempt as current response
+                }
+
+                // Check response against criteria
+                const checkResult = await this.checkResponseAgainstCriteria(
+                    currentResponse, 
+                    this.gradingCriteria,
+                    iteration
+                );
+
+                if (!checkResult) {
+                    throw new Error("Failed to check response against criteria");
+                }
+
+                // If succeeded, return the successful response
+                if (checkResult.succeeded) {
+                    addMessage("✅ Success! All criteria met.", 'system');
+                    addMessage("🎯 Final successful response:", 'system');
+                    addMessage(currentResponse, 'ai');
+                    
+                    // Return the successful response
+                    return currentResponse;
+                }
+
+                // If failed, generate refined prompt
+                const refinedPrompt = await this.makeOpenAIRequest([
+                    { 
+                        role: "system", 
+                        content: `You are helping refine a prompt based on test failures.
+Your goal is to generate a sentence where no words appear in the Bible.
+Review the failures and create specific guidance to avoid these issues.`
+                    },
+                    { 
+                        role: "user", 
+                        content: `ORIGINAL TASK: ${this.baseQuery}
+
+LATEST TEST RESULTS:
+${checkResult.synthesis}
+
+Create a new prompt that:
+1. Specifically addresses the words that failed
+2. Provides clear guidance on what types of words to use instead
+3. Gives concrete examples of successful approaches
+
+Respond with a clear, actionable prompt.`
+                    }
+                ], "gpt-4-turbo-preview");
+
+                if (!refinedPrompt) {
+                    throw new Error("Failed to generate refined prompt");
+                }
+
+                addMessage("Refining prompt based on test results...", 'system');
+                addMessage(refinedPrompt, 'system');
+
+                // Generate new attempt using the refined prompt
+                const newAttempt = await this.makeOpenAIRequest([
+                    { 
+                        role: "system", 
+                        content: refinedPrompt 
+                    },
+                    { 
+                        role: "user", 
+                        content: "Generate one sentence that meets all requirements above." 
+                    }
+                ], "gpt-4-turbo-preview");
+
+                if (!newAttempt) {
+                    throw new Error("Failed to generate new attempt");
+                }
+
+                addMessage("New attempt:", 'system');
+                addMessage(newAttempt, 'ai');
+
+                // Continue with next iteration
+                return await this.processQuery(newAttempt, iteration + 1);
+                
+            } catch (error) {
+                console.error('Error in processQuery:', error);
+                addMessage(`Error: ${error.message}`, 'system');
+                return null;
+            }
+        }
+
+        async checkResponseAgainstCriteria(response, criteria, iteration = 1) {
+            try {
+                const actualResponse = response.split(':').slice(-1)[0].trim();
+                const words = actualResponse.replace(/[.,!?""]/g, '').split(/\s+/).filter(word => word.length > 0);
+                
+                // Make each test clearer with a pass/fail
+                const testResults = await Promise.all(words.map(async word => {
+                    const testPrompt = `
+For word: "${word}"
+Quick analysis: Is this word found in any version of the Bible?
+
+Format:
+ANALYSIS: [1-2 sentence reasoning]
+RESULT: YES/NO
+TEST: ${word} is not in Bible = PASS/FAIL`;
+
+                    const result = await this.makeOpenAIRequest([
+                        { 
+                            role: "system", 
+                            content: "You are a text analyzer. Provide brief reasoning and clear PASS/FAIL status." 
+                        },
+                        { 
+                            role: "user", 
+                            content: testPrompt 
+                        }
+                    ], "gpt-4-turbo-preview");
+
+                    addTestResult(word, result);
+                    return { word, result };
+                }));
+                
+                // Simple synthesis that just looks for any fails
+                const synthesis = await this.makeOpenAIRequest([
+                    { 
+                        role: "system", 
+                        content: `You are reviewing test results. Count passes and fails only.`
+                    },
+                    { 
+                        role: "user", 
+                        content: `Review these test results and provide a simple count:
+${JSON.stringify(testResults, null, 2)}
+
+Format:
+SYNTHESIS:
+• Total Tests: [number]
+• Passes: [number]
+• Fails: [number]
+• Failed Words: [list only words that failed]
+
+OUTCOME: [if any fails exist = CONTINUE, if all pass = COMPLETE]`
+                    }
+                ], "gpt-4-turbo-preview");
+
+                const succeeded = synthesis.includes('OUTCOME: COMPLETE');
+                
+                return {
+                    testResults,
+                    synthesis,
+                    succeeded,
+                    iteration
+                };
+            } catch (error) {
+                console.error('Error in checkResponseAgainstCriteria:', error);
+                return null;
+            }
+        }
+
+        // Helper method to get learning prompt
+        getLearningPrompt(iteration) {
+            return `You are a fact-based learning analyzer. Your role is to document ONLY verified outcomes from previous attempts, with no speculation.
+
+Previous Learning History:
+${this.formatLearningHistory()}
+
+Format your response EXACTLY like this:
+LEARNING_ANALYSIS:
+ITERATION: ${iteration}
+
+VERIFIED_SUCCESSES:
+• Word: [successful word]
+  Context: [exact context where it worked]
+  Verification: [how it was verified]
+
+VERIFIED_FAILURES:
+• Word: [failed word]
+  Context: [exact context of failure]
+  Verification: [how failure was confirmed]
+
+STATISTICAL_SUMMARY:
+• Total Words Tested: [number]
+• Success Rate: [percentage]
+• Most Common Failure Type: [type with count]
+
+FACTUAL_PATTERNS:
+• [observed pattern] occurred [X] times
+• [another pattern] occurred [Y] times
+
+Remember:
+- Include ONLY verified outcomes
+- NO suggestions or hypotheticals
+- NO speculation about why something might work
+- ONLY report patterns with 2+ occurrences
+- Include exact counts and percentages`;
+        }
+
+        // Add new helper method to extract refined prompt
+        async extractRefinedPrompt(synthesis, iteration = 1) {
+            const learningPrompt = `You are a conservative prompt refiner focused only on verified patterns. Your role is to use ONLY proven successful patterns to guide the next attempt.
+
+CURRENT_ITERATION: ${iteration}
+
+SUCCESS_PATTERNS:
+${Array.from(this.successHistory.entries())
+    .filter(([_, count]) => count >= 2)
+    .map(([word, count]) => `• "${word}" succeeded ${count} times`)
+    .join('\n')}
+
+VERIFIED_FAILURES:
+${Array.from(this.failureHistory.entries())
+    .map(([word, count]) => `• "${word}" failed ${count} times`)
+    .join('\n')}
+
+STATISTICAL_EVIDENCE:
+• Total Attempts: ${iteration}
+• Success Rate: ${this.calculateSuccessRate()}%
+• Most Common Failure: ${this.getMostCommonFailure()}
+
+Your task:
+1. Use ONLY patterns that have succeeded multiple times
+2. DO NOT suggest experimental or untested approaches
+3. DO NOT speculate about new strategies
+4. If no proven patterns exist, state "Insufficient data for pattern-based guidance"
+
+Format your response as:
+REFINED_PROMPT:
+[Base prompt using only proven successful patterns]
+
+VERIFICATION_CRITERIA:
+• [specific, measurable criterion based on past successes]
+• [another specific criterion]`;
+
+            try {
+                const refinedPrompt = await this.makeOpenAIRequest([
+                    { 
+                        role: "system", 
+                        content: learningPrompt 
+                    },
+                    { 
+                        role: "user", 
+                        content: `Based on the above data, provide a refined prompt using ONLY verified successful patterns.` 
+                    }
+                ], "gpt-4-turbo-preview");
+
+                return refinedPrompt;
+            } catch (error) {
+                console.error('Prompt Refinement Error:', error);
+                return 'Error during prompt refinement.';
+            }
+        }
+
+        // Helper methods to support the refined approach
+        calculateSuccessRate() {
+            const successes = Array.from(this.successHistory.values()).reduce((a, b) => a + b, 0);
+            const failures = Array.from(this.failureHistory.values()).reduce((a, b) => a + b, 0);
+            const total = successes + failures;
+            return total ? Math.round((successes / total) * 100) : 0;
+        }
+
+        getMostCommonFailure() {
+            const failures = Array.from(this.failureHistory.entries());
+            if (!failures.length) return "None recorded";
+            
+            failures.sort((a, b) => b[1] - a[1]);
+            return `"${failures[0][0]}" (${failures[0][1]} times)`;
+        }
+
+        // Add new helper method to format history summary
+        formatHistorySummary() {
+            return this.iterationHistory.map(entry => `
+Iteration ${entry.iteration}:
+• Failed Words: ${entry.failures.join(', ')}
+• Active Patterns: ${entry.patterns.map(([pattern, count]) => 
+        `${pattern} (${count}x)`).join(', ')}
+    `).join('\n');
+        }
+
+        // Add helper method to format pattern analysis
+        formatPatternAnalysis() {
+            const recurring = Array.from(this.patternHistory.entries())
+                .filter(([_, count]) => count > 1)
+                .sort((a, b) => b[1] - a[1]);
+            
+            const successful = Array.from(this.successHistory.entries())
+                .map(([word, count]) => `${word} (${count}x)`);
+
+            return `
+Recurring Issues:
+${recurring.map(([pattern, count]) => `• ${pattern}: ${count}x`).join('\n')}
+
+Successful Approaches:
+${successful.length ? successful.join(', ') : 'None recorded yet'}`;
+        }
+
+        // Helper method to format learning history for prompts
+        formatLearningHistory() {
+            if (this.learningHistory.length === 0) return "No previous attempts.";
+
+            return this.learningHistory.map((entry, index) => `
+Attempt ${index + 1}:
+${entry.learning}
+Effectiveness: ${entry.effectiveness}
+---`).join('\n');
+        }
+
+        // Method to update learning history
+        updateLearningHistory(learning, iteration) {
+            // Extract failure patterns
+            const patterns = learning.match(/FAILURE_PATTERNS:([\s\S]*?)(?=\n\nROOT_CAUSES:|$)/)?.[1] || '';
+            patterns.split('•').forEach(pattern => {
+                if (pattern.trim()) {
+                    const count = this.failurePatterns.get(pattern.trim()) || 0;
+                    this.failurePatterns.set(pattern.trim(), count + 1);
+                }
+            });
+
+            // Calculate effectiveness based on pattern recurrence
+            const effectiveness = this.calculateEffectiveness(patterns, iteration);
+
+            this.learningHistory.push({
+                iteration,
+                learning,
+                patterns: patterns.split('•').filter(p => p.trim()),
+                effectiveness,
+                timestamp: new Date()
+            });
+        }
+
+        // Method to calculate effectiveness of previous attempts
+        calculateEffectiveness(currentPatterns, iteration) {
+            if (iteration === 1) return "Baseline";
+
+            const previousPatterns = this.learningHistory[iteration - 2].patterns;
+            const recurringPatterns = previousPatterns.filter(p => 
+                currentPatterns.includes(p)
+            ).length;
+
+            if (recurringPatterns === 0) return "High";
+            if (recurringPatterns < previousPatterns.length / 2) return "Medium";
+            return "Low";
+        }
+
+        // Add new method to clean prompts
+        cleanPrompt(prompt) {
+            // Remove common pleasantries and meta-commentary
+            const cleanedPrompt = prompt
+                .replace(/^(hi|hello|greetings|sure|okay|alright|here's|let me|i will|i'll|i can).*?\n/gi, '')
+                .replace(/^(based on|according to|considering|taking into account).*?\n/gi, '')
+                .replace(/\n(thanks|thank you|hope this helps|let me know).*$/gi, '')
+                .trim();
+            
+            return cleanedPrompt;
+        }
+
+        async synthesizeLearning(criteria, checkResult) {
+            const learningPrompt = `You are a context synthesizer. Your task is to analyze test results and create clear, actionable guidance for the next attempt.
+
+Format your response EXACTLY like this:
+REFINED_CONTEXT:
+GOAL: [One clear sentence stating the objective]
+
+SPECIFICATIONS:
+• [Key requirements from original criteria]
+• [Additional specifications from original criteria]
+
+LEARNED_CONSTRAINTS:
+• AVOID: 
+  - [Specific pattern that failed]
+  - [Another pattern that failed]
+  - [Additional patterns to avoid]
+• PREFER:
+  - [Pattern or approach that worked better]
+  - [Another successful pattern]
+  - [Additional recommended approaches]
+
+EXAMPLES:
+✗ FAILED: "[concrete example from test results]"
+  WHY: [Clear explanation of why this failed]
+✓ WORKED: "[concrete example or hypothetical based on learnings]"
+  WHY: [Clear explanation of why this works]
+
+EXECUTION_GUIDANCE:
+1. [Specific, actionable step based on learnings]
+2. [Another concrete step or technique to use]
+3. [Final guidance point with clear direction]
+
+Remember: Each section must be filled with specific, concrete information from the test results.`;
+
+            try {
+                const learning = await this.makeOpenAIRequest([
+                    { 
+                        role: "system", 
+                        content: learningPrompt
+                    },
+                    { 
+                        role: "user", 
+                        content: `ORIGINAL CRITERIA:
+${criteria}
+
+TEST RESULTS:
+${checkResult}
+
+Based on these test results:
+1. Extract specific patterns that failed
+2. Identify any approaches that showed promise
+3. Create concrete, actionable guidance for the next attempt
+4. Include real examples from the test results
+5. Provide clear, step-by-step execution guidance
+
+Synthesize this into a refined context that will guide the next attempt.`
+                    }
+                ], "gpt-3.5-turbo-0125");
+
+                // Verify that all sections are present and filled
+                const requiredSections = ['GOAL:', 'SPECIFICATIONS:', 'LEARNED_CONSTRAINTS:', 'EXAMPLES:', 'EXECUTION_GUIDANCE:'];
+                const missingOrEmpty = requiredSections.filter(section => 
+                    !learning.includes(section) || 
+                    learning.split(section)[1].trim().length < 10
+                );
+
+                if (missingOrEmpty.length > 0) {
+                    console.warn('Missing or empty sections:', missingOrEmpty);
+                    // Retry with more explicit instructions for missing sections
+                    return this.makeOpenAIRequest([
+                        { 
+                            role: "system", 
+                            content: learningPrompt
+                        },
+                        { 
+                            role: "user", 
+                            content: `${learning}\n\nThe above response is missing or has empty sections: ${missingOrEmpty.join(', ')}. Please provide a complete response with all sections filled in with specific, concrete information.`
+                        }
+                    ], "gpt-3.5-turbo-0125");
+                }
+
+                return learning;
+            } catch (error) {
+                console.error('Learning Synthesis Error:', error);
+                return 'Error during learning synthesis.';
+            }
+        }
+
+        /**
+         * Grades the assistant's output against the grading criteria.
+         * @param {string} conversationSummary 
+         * @param {string} assistantOutput 
+         * @returns {string} - The grading feedback.
+         */
+        async gradeResponse(conversationSummary, assistantOutput) {
+            const graderPersona = this.personas.find(p => p.role === "response_grader");
+            if (!graderPersona) {
+                console.error('Response Grader persona not found.');
+                return 'Grading functionality is not available.';
+            }
+
+            try {
+                const gradingResponse = await this.makeOpenAIRequest([
+                    { role: "system", content: graderPersona.systemPrompt },
+                    { role: "user", content: `GRADING_CRITERIA and CHECKER_EQUATIONS:\n${this.extractGradingCriteria(conversationSummary)}\n\nAI Assistant's Output:\n${assistantOutput}` }
+                ], graderPersona.model);
+
+                return gradingResponse;
+            } catch (error) {
+                console.error('Grading Error:', error);
+                return 'An error occurred while grading the response.';
+            }
+        }
+
+        /**
+         * Extracts the grading criteria from the conversation summary.
+         * @param {string} conversationSummary 
+         * @returns {string} - The grading criteria and checker equations.
+         */
+        extractGradingCriteria(conversationSummary) {
+            // Use regex to extract GRADING_CRITERIA and CHECKER_EQUATIONS from the summary
+            const gradingMatch = conversationSummary.match(/GRADING_CRITERIA:\n([\s\S]+?)\n\nCHECKER_EQUATIONS:/);
+            const checkerMatch = conversationSummary.match(/CHECKER_EQUATIONS:\n([\s\S]+?)\n\n/);
+
+            let gradingCriteria = '';
+            if (gradingMatch && gradingMatch[1]) {
+                gradingCriteria = gradingMatch[1].trim();
+            }
+
+            let checkerEquations = '';
+            if (checkerMatch && checkerMatch[1]) {
+                checkerEquations = checkerMatch[1].trim();
+            }
+
+            return `GRADING_CRITERIA:\n${gradingCriteria}\n\nCHECKER_EQUATIONS:\n${checkerEquations}`;
+        }
+
+        /**
+         * Formats the conversation summary for evaluation.
+         * @param {string} originalQuery 
+         * @param {Array} conversations 
+         * @returns {string}
+         */
+        formatConversationSummary(originalQuery, conversations) {
+            let summary = `Original Question: ${originalQuery}\n\n`;
+            conversations.forEach(conv => {
+                summary += `=== ${conv.role.toUpperCase()} PERSPECTIVE ===\n`;
+                conv.exchanges.forEach(exchange => {
+                    summary += `${exchange.type === 'persona' ? 'Question' : 'Response'}: ${exchange.content}\n`;
+                });
+                summary += '\n';
+            });
+            return summary;
+        }
+
+        /**
+         * Updates the original query with the provided consideration.
+         * @param {string} baseQuery 
+         * @param {string} consideration 
+         * @returns {string}
+         */
+        updateQueryWithConsideration(baseQuery, consideration) {
+            // Extract key requirements from the consideration
+            const requiresLiteralInterpretation = consideration.includes('LITERAL_CONSTRAINT');
+
+            if (requiresLiteralInterpretation) {
+                // Rephrase the query to be more explicit about literal requirements
+                return this.rephraseWithLiteralRequirements(baseQuery);
+            }
+
+            // Add other cases as needed
+            return baseQuery;
+        }
+
+        rephraseWithLiteralRequirements(query) {
+            // Add logic to rephrase different types of queries
+            // This is just an example for the Bible words case
+            if (query.includes('no words that are in the Bible')) {
+                return `Create a sentence where every single word used must be verified to not appear anywhere in the Biblical text`;
+            }
+            return query;
+        }
+
+        /**
+         * Evaluates the conversation summary to determine if context adjustments are needed.
+         * @param {string} conversationSummary 
+         * @returns {string|null} - The consideration if adjustments are needed, else null.
+         */
+        async evaluateResponse(conversationSummary) {
+            const judgePersona = {
+                role: "conversation_judge",
+                systemPrompt: `You are a focused evaluator looking for key disagreements or differences identified in the conversation. Your ONLY job is to:
+
+1. Look for cases where:
+   - A perspective identifies this is NOT the same as a well-known problem
+   - A perspective points out a crucial difference that changes the solution
+   - Multiple perspectives disagree about a fundamental aspect
+
+Output Format:
+- If difference found: "REWRITE_NEEDED: [brief explanation of the crucial difference]"
+- If no significant difference: "NO_REWRITE_NEEDED"
+
+Important:
+- Focus ONLY on major differences that would change the answer
+- If a pattern matcher identifies this is NOT a classic problem, always trigger a rewrite
+- Ignore minor clarifications or improvements to explanation
+- When in doubt, err on the side of NO_REWRITE_NEEDED`,
+                model: "gpt-3.5-turbo-0125"
+            };
+
+            try {
+                const evaluationResponse = await this.makeOpenAIRequest([
+                    { role: "system", content: judgePersona.systemPrompt },
+                    { role: "user", content: `Review this conversation and determine if a crucial difference has been identified:\n${conversationSummary}` }
+                ], judgePersona.model);
+
+                // Always display the judge's evaluation
+                addMessage(`Judge's Evaluation: ${evaluationResponse}`, 'judge');
+
+                if (evaluationResponse.startsWith("REWRITE_NEEDED:")) {
+                    const consideration = evaluationResponse.substring("REWRITE_NEEDED:".length).trim();
+                    return consideration;
+                }
+                return null;
+            } catch (error) {
+                console.error('Judge Evaluation Error:', error);
+                addMessage('Judge Evaluation Error: ' + error.message, 'error');
+                return null;
+            }
+        }
+
+        /**
+         * Synthesizes the conversation into a final response.
+         * @param {string} originalQuery 
+         * @param {Array} allConversations 
+         * @returns {string} - The synthesized response.
+         */
+        async synthesizeConversation(originalQuery, allConversations) {
+            const systemPrompt = `You are an expert problem solver. Your task is to provide a clear, direct solution to the original question. 
+
+Important guidelines:
+- Focus solely on the best solution/answer
+- Present it in a clear, step-by-step format when appropriate
+- Do not explain your reasoning process or reference any analysis
+- Do not mention alternative approaches unless directly relevant
+- Do not reference any conversations or perspectives
+- Write as if you're providing the answer for the first time
+- Be concise but complete
+
+Remember: The user doesn't need to know how you arrived at the answer - they just need the best possible answer presented clearly.`;
+
+            // Format the conversation history (for the AI's context only)
+            let conversationSummary = `Original Question: ${originalQuery}\n\n`;
+            allConversations.forEach(conv => {
+                conversationSummary += `=== ${conv.role.toUpperCase()} PERSPECTIVE ===\n`;
+                conv.exchanges.forEach(exchange => {
+                    conversationSummary += `${exchange.type === 'persona' ? 'Question' : 'Response'}: ${exchange.content}\n`;
+                });
+                conversationSummary += '\n';
+            });
+
+            // If considerations were added, include them
+            // Assuming considerations are appended to the original query
+
+            try {
+                const synthesizedResponse = await this.makeOpenAIRequest([
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: `Here is the context to inform your response (but not to reference):\n\n${conversationSummary}` }
+                ], "gpt-3.5-turbo");
+
+                return synthesizedResponse;
+            } catch (error) {
+                console.error('Synthesis Error:', error);
+                throw new Error('Failed to synthesize responses');
+            }
+        }
+
+        /**
+         * Generates the final answer based on the synthesized response.
+         * @param {string} originalQuery 
+         * @param {Array} conversations 
+         * @param {string} synthesizedResponse 
+         * @returns {string} - The final answer.
+         */
+        async generateFinalAnswer(originalQuery, conversations, synthesizedResponse) {
+            const systemPrompt = `You are a direct and clear communicator. Your task is to provide the most practical and straightforward answer possible.
+
+Key requirements:
+1. Structure:
+   - Start with the solution immediately - no setup needed
+   - Use the most appropriate format for the specific question:
+     * Numbered steps for procedures
+     * Bullet points for related items
+     * Short paragraphs for explanations
+     * Code blocks for programming
+     * Tables for comparisons
+
+2. Content:
+   - Include ONLY information needed to solve the problem
+   - Add crucial caveats or warnings if they affect the solution
+   - Use examples only if they clarify the solution
+   - Include context only if essential for implementation
+
+3. Language:
+   - Use simple, direct language
+   - Avoid meta-discussion or analysis
+   - No references to how the answer was derived
+   - No comparisons to other scenarios or versions
+
+Bad example:
+"In this scenario, we need to consider several factors... After analyzing the situation..."
+
+Good example:
+"To solve this, you'll need to:
+1. First step
+2. Second step
+
+Important: Watch out for [specific risk]"
+
+Remember: Focus solely on helping the user solve their immediate problem.`;
+
+            try {
+                const finalAnswer = await this.makeOpenAIRequest([
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: `Original question: ${originalQuery}\n\nContext (for your reference only):\n${synthesizedResponse}` }
+                ], "gpt-3.5-turbo");
+
+                return finalAnswer;
+            } catch (error) {
+                console.error('Final Answer Error:', error);
+                throw new Error('Failed to generate final answer');
+            }
+        }
+
+        // Optional: Methods to adjust evaluator sensitivity
+        setEvaluatorSensitivity(level) {
+            const allowedLevels = ['low', 'medium', 'high'];
+            if (allowedLevels.includes(level)) {
+                this.evaluatorSensitivity = level;
+                console.log(`Evaluator sensitivity set to ${level}`);
+            } else {
+                console.warn(`Invalid sensitivity level: ${level}. Allowed levels: ${allowedLevels.join(', ')}`);
+            }
+        }
+
+        extractReframedPrompt(analysis) {
+            const reframedMatch = analysis.match(/GRADING_CRITERIA:\n([\s\S]+?)(?=---|$)/);
+            return reframedMatch ? reframedMatch[1].trim() : null;
+        }
+
+        // Add these helper methods
+        extractComponentAnalysis(checkResult) {
+            const componentSection = checkResult.match(/DETAILED_COMPONENT_ANALYSIS:\n([\s\S]*?)(?=\n\n|$)/);
+            return componentSection ? componentSection[1] : '';
+        }
+
+        extractHiddenRequirements(checkResult) {
+            const hiddenSection = checkResult.match(/HIDDEN_REQUIREMENT_CHECKS:\n([\s\S]*?)(?=\n\n|$)/);
+            return hiddenSection ? hiddenSection[1] : '';
+        }
+
+        // Add new method to track patterns
+        trackPattern(word, isSuccess) {
+            if (isSuccess) {
+                this.successHistory.set(word, (this.successHistory.get(word) || 0) + 1);
+            } else {
+                this.failureHistory.set(word, (this.failureHistory.get(word) || 0) + 1);
+            }
+
+            // Identify patterns in failures
+            if (!isSuccess) {
+                const pattern = this.identifyWordPattern(word);
+                this.patternHistory.set(pattern, (this.patternHistory.get(pattern) || 0) + 1);
+            }
+        }
+
+        // Add helper method to identify patterns
+        identifyWordPattern(word) {
+            // Simple pattern identification - can be expanded
+            if (word.length <= 3) return 'very_short_word';
+            if (word.includes('-')) return 'hyphenated_word';
+            if (/^[A-Z]/.test(word)) return 'capitalized_word';
+            if (/[aeiou]{2,}/i.test(word)) return 'multiple_vowels';
+            return 'standard_word';
+        }
+    }
+
+    const superLLM = new SuperLLM();
+
+    function addMessage(content, type = 'human') {
+        const messagesContainer = document.getElementById('chatMessages');
+        const messageDiv = document.createElement('div');
+        
+        switch(type) {
+            case 'prompt':
+                messageDiv.className = 'message prompt';
+                messageDiv.innerHTML = `
+                    <div class="message-content">
+                        <div class="speaker">Refined Prompt:</div>
+                        <pre>${content}</pre>
+                    </div>
+                `;
+                break;
+            case 'judge':
+                messageDiv.className = 'message judge';
+                messageDiv.innerHTML = `
+                    <div class="message-content">
+                        <div class="speaker">Judge:</div>
+                        ${content}
+                    </div>
+                `;
+                break;
+            case 'system':
+                messageDiv.className = 'message system';
+                messageDiv.innerHTML = `
+                    <div class="message-content">
+                        <div class="speaker">System:</div>
+                        ${content}
+                    </div>
+                `;
+                break;
+            case 'persona':
+                messageDiv.className = 'message persona';
+                messageDiv.innerHTML = `
+                    <div class="message-content">
+                        <div class="speaker">Perspective:</div>
+                        ${content}
+                    </div>
+                `;
+                break;
+            case 'ai':
+                messageDiv.className = 'message ai';
+                messageDiv.innerHTML = `
+                    <div class="message-content">
+                        <div class="speaker">Assistant:</div>
+                        ${content}
+                    </div>
+                `;
+                break;
+            case 'grader':
+                messageDiv.className = 'message grader';
+                messageDiv.innerHTML = `
+                    <div class="message-content">
+                        <div class="speaker">Grader:</div>
+                        ${content}
+                    </div>
+                `;
+                break;
+            default:
+                messageDiv.className = 'message human';
+                messageDiv.innerHTML = `
+                    <div class="message-content">
+                        <div class="speaker">You:</div>
+                        ${content}
+                    </div>
+                `;
+        }
+        
+        messagesContainer.appendChild(messageDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function addConsideration(consideration) {
+        const messagesContainer = document.getElementById('chatMessages');
+        const considerationDiv = document.createElement('div');
+        considerationDiv.className = 'consideration-section';
+        considerationDiv.innerHTML = `
+            <div class="consideration-header">Considerations Added</div>
+            <div class="consideration-content">${consideration}</div>
+        `;
+        messagesContainer.appendChild(considerationDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function addGradingFeedback(feedback) {
+        const messagesContainer = document.getElementById('chatMessages');
+        const gradingDiv = document.createElement('div');
+        gradingDiv.className = 'grading-feedback-section';
+        
+        // Extract and format each section
+        const sections = {
+            'Component Analysis': feedback.componentAnalysis,
+            'Hidden Requirements': feedback.hiddenRequirements,
+            'Edge Cases': feedback.checkResult.match(/EDGE_CASE_ANALYSIS:\n([\s\S]*?)(?=\n\n|$)/)?.[1] || '',
+            'Overall Grade': feedback.checkResult.match(/OVERALL_GRADING:\n([\s\S]*?)(?=\n\n|$)/)?.[1] || '',
+            'Potential Gotchas': feedback.checkResult.match(/POTENTIAL_GOTCHAS:\n([\s\S]*?)(?=\n\n|$)/)?.[1] || ''
+        };
+
+        let htmlContent = `<div class="grading-feedback-header">Detailed Grading Analysis</div>`;
+        
+        for (const [title, content] of Object.entries(sections)) {
+            if (content) {
+                htmlContent += `
+                    <div class="grading-section">
+                        <div class="section-header">${title}</div>
+                        <pre class="section-content">${content}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        gradingDiv.innerHTML = htmlContent;
+        messagesContainer.appendChild(gradingDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    let currentQuery = null;
+    let synthesizedResponse = null;
+
+    async function handleUserInput() {
+        const userInput = document.getElementById('userInput').value;
+        if (!userInput.trim()) return;
+
+        // Clear previous state
+        document.getElementById('finalAnswerButton').disabled = true;
+        currentQuery = userInput;
+        document.getElementById('userInput').value = '';
+        document.getElementById('loading').style.display = 'flex';
+
+        try {
+            // Display user's message first
+            addMessage(userInput, 'human');
+
+            // Delegate processing to processQuery
+            const synthesizedResponse = await superLLM.processQuery(userInput);
+
+            // Display synthesized response
+            const synthesisDivider = document.createElement('div');
+            synthesisDivider.className = 'synthesis-divider';
+            synthesisDivider.innerHTML = '<div class="synthesis-header">Synthesized Response</div>';
+            document.getElementById('chatMessages').appendChild(synthesisDivider);
+
+            addMessage(synthesizedResponse, 'ai');
+            document.getElementById('finalAnswerButton').disabled = false;
+        } catch (error) {
+            console.error('Error:', error);
+            addMessage('Sorry, an error occurred while processing your request.', 'ai');
+        } finally {
+            document.getElementById('loading').style.display = 'none';
+        }
+    }
+
+    async function getFinalAnswer() {
+        if (!currentQuery || !synthesizedResponse) {
+            addMessage('Please complete the conversation and synthesis first.', 'error');
+            return;
+        }
+
+        document.getElementById('loading').style.display = 'flex';
+        document.getElementById('finalAnswerButton').disabled = true;
+
+        try {
+            const finalAnswer = await superLLM.generateFinalAnswer(
+                currentQuery,
+                [], // Pass conversations if needed; adjust based on your implementation
+                synthesizedResponse
+            );
+
+            // Add a divider before the final answer
+            const messagesContainer = document.getElementById('chatMessages');
+            const divider = document.createElement('div');
+            divider.className = 'final-answer-divider';
+            divider.innerHTML = '<div class="final-answer-header">Final Answer</div>';
+            messagesContainer.appendChild(divider);
+
+            // Add the final answer
+            addMessage(finalAnswer, 'ai');
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        } catch (error) {
+            console.error('Final Answer Error:', error);
+            addMessage('Sorry, an error occurred while generating the final answer.', 'error');
+        } finally {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('finalAnswerButton').disabled = false;
+        }
+    }
+
+    // Add event listener for Enter key
+    document.getElementById('userInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            handleUserInput();
+        }
+    });
+
+    // Add this new function to handle context updates
+    function addContextUpdate(originalQuery, updatedQuery) {
+        const messagesContainer = document.getElementById('chatMessages');
+        const updateDiv = document.createElement('div');
+        updateDiv.className = 'context-update-section';
+        updateDiv.innerHTML = `
+            <div class="context-update-header">Context Update - New Iteration</div>
+            <div class="context-update-content">
+                <div class="original-query">Original: ${originalQuery}</div>
+                <div class="arrow">↓</div>
+                <div class="updated-query">Updated: ${updatedQuery}</div>
+            </div>
+        `;
+        messagesContainer.appendChild(updateDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function addJudgeDivider() {
+        const messagesContainer = document.getElementById('chatMessages');
+        const divider = document.createElement('div');
+        divider.className = 'judge-divider';
+        divider.innerHTML = '<div class="judge-header">JUDGE EVALUATION</div>';
+        messagesContainer.appendChild(divider);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function addJudgeEvaluation(evaluation) {
+        const messagesContainer = document.getElementById('chatMessages');
+        const evaluationDiv = document.createElement('div');
+        evaluationDiv.className = `judge-evaluation ${evaluation.startsWith('REWRITE') ? 'rewrite' : 'no-rewrite'}`;
+        evaluationDiv.innerHTML = `
+            <div class="judge-content">
+                <div class="judge-icon">${evaluation.startsWith('REWRITE') ? '⚠️' : '✅'}</div>
+                <div class="judge-text">${evaluation}</div>
+            </div>
+        `;
+        messagesContainer.appendChild(evaluationDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // Add new helper function to display structured analysis
+    function addStructuredAnalysis(analysis) {
+        const messagesContainer = document.getElementById('chatMessages');
+        const analysisDiv = document.createElement('div');
+        analysisDiv.className = 'structured-analysis-section';
+        analysisDiv.innerHTML = `
+            <div class="analysis-header">Grading Criteria</div>
+            <pre class="analysis-content">${analysis}</pre>
+        `;
+        messagesContainer.appendChild(analysisDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // Add new helper function to display strategic plan
+    function addStrategicPlan(plan) {
+        const messagesContainer = document.getElementById('chatMessages');
+        const planDiv = document.createElement('div');
+        planDiv.className = 'strategic-plan-section';
+        planDiv.innerHTML = `
+            <div class="plan-header">Solution Strategy</div>
+            <pre class="plan-content">${plan}</pre>
+        `;
+        messagesContainer.appendChild(planDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // Add new helper function to display grading feedback
+    function addGradingFeedback(feedback) {
+        const messagesContainer = document.getElementById('chatMessages');
+        const gradingDiv = document.createElement('div');
+        gradingDiv.className = 'grading-feedback-section';
+        gradingDiv.innerHTML = `
+            <div class="grading-feedback-header">Grading Feedback</div>
+            <pre class="grading-feedback-content">${feedback}</pre>
+        `;
+        messagesContainer.appendChild(gradingDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // Add a new helper function to display the learning feedback
+    function addLearningFeedback(learning) {
+        const messagesContainer = document.getElementById('chatMessages');
+        const learningDiv = document.createElement('div');
+        learningDiv.className = 'learning-feedback-section';
+        
+        const sections = {
+            'Failure Patterns': learning.match(/FAILURE_PATTERNS:([\s\S]*?)(?=\n\nROOT_CAUSES:|$)/)?.[1] || '',
+            'Root Causes': learning.match(/ROOT_CAUSES:([\s\S]*?)(?=\n\nACTIONABLE_GUIDANCE:|$)/)?.[1] || '',
+            'Actionable Guidance': learning.match(/ACTIONABLE_GUIDANCE:([\s\S]*?)(?=\n\nPROMPT_REFINEMENT:|$)/)?.[1] || '',
+            'Refined Prompt': learning.match(/PROMPT_REFINEMENT:([\s\S]*?)(?=\n\n|$)/)?.[1] || ''
+        };
+
+        let htmlContent = `<div class="learning-feedback-header">Learning Synthesis</div>`;
+        
+        for (const [title, content] of Object.entries(sections)) {
+            if (content.trim()) {
+                htmlContent += `
+                    <div class="learning-section">
+                        <div class="section-header">${title}</div>
+                        <pre class="section-content">${content.trim()}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        learningDiv.innerHTML = htmlContent;
+        messagesContainer.appendChild(learningDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // Add this new helper function to display test results
+    function addTestResult(word, result) {
+        const messagesContainer = document.getElementById('chatMessages');
+        const testDiv = document.createElement('div');
+        testDiv.className = 'test-result-section';
+        testDiv.innerHTML = `
+            <div class="test-header">Word Test: "${word}"</div>
+            <pre class="test-content">${result}</pre>
+        `;
+        messagesContainer.appendChild(testDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // Add CSS for prompt messages
+    const style = document.createElement('style');
+    style.textContent = `
+        .message.prompt {
+            background-color: #e1f5fe;
+            border-left: 4px solid #039be5;
+            color: #01579b;
+            margin: 10px 0;
+            padding: 10px;
+        }
+
+        .message.prompt pre {
+            background-color: #bbdefb;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 5px 0;
+        }
+
+        .message.prompt .speaker {
+            font-weight: bold;
+            color: #039be5;
+            margin-bottom: 5px;
+        }
+    `;
+    document.head.appendChild(style);
+
+    document.getElementById('userInput').addEventListener('click', function() {
+        this.select();
+    });
+</script>
+
+<style>
+    #chatMessages {
+        height: 400px;
+        overflow-y: auto;
+        border: 1px solid #ccc;
+        padding: 10px;
+        margin-bottom: 10px;
+        background-color: #ffffff;
+    }
+
+    .input-container {
+        display: flex;
+        gap: 10px;
+    }
+
+    #userInput {
+        flex: 1;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+    }
+
+    .message {
+        margin-bottom: 10px;
+        padding: 8px;
+        border-radius: 4px;
+    }
+
+    .message.human {
+        background-color: #e3f2fd;
+        align-self: flex-start;
+    }
+
+    .message.ai {
+        background-color: #f5f5f5;
+        align-self: flex-end;
+    }
+
+    .simulated-section {
+        margin-top: 20px;
+        border-top: 1px solid #ccc;
+        padding-top: 10px;
+    }
+
+    .simulated-header {
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+
+    .simulated-response {
+        margin-bottom: 15px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+    }
+
+    #loading {
+        display: none;
+        justify-content: center;
+        padding: 10px;
+        font-weight: bold;
+    }
+
+    .persona-header {
+        font-weight: bold;
+        color: #2196F3;
+        margin-bottom: 8px;
+    }
+
+    .conversation-flow {
+        margin-left: 10px;
+    }
+
+    .simulated-user {
+        background-color: #e3f2fd;
+        padding: 8px;
+        border-radius: 4px;
+        margin: 5px 0;
+    }
+
+    .ai-response {
+        background-color: #f5f5f5;
+        padding: 8px;
+        border-radius: 4px;
+        margin: 5px 0;
+    }
+
+    .speaker {
+        font-weight: bold;
+        margin-bottom: 4px;
+        color: #666;
+    }
+
+    .input-container button {
+        padding: 8px 16px;
+        margin-left: 8px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
+    }
+
+    .input-container button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+    }
+
+    .input-container button:hover:not(:disabled) {
+        background-color: #0056b3;
+    }
+
+    .synthesis-divider {
+        margin: 20px 0;
+        border-top: 2px solid #007bff;
+        padding-top: 10px;
+    }
+
+    .synthesis-header {
+        font-weight: bold;
+        color: #007bff;
+        font-size: 1.2em;
+        margin-bottom: 10px;
+        text-align: center;
+    }
+
+    .reframe-section {
+        margin: 20px 0;
+        padding: 15px;
+        background-color: #fff3e0;
+        border-left: 4px solid #ff9800;
+        border-radius: 4px;
+    }
+
+    .reframe-header {
+        font-weight: bold;
+        color: #f57c00;
+        margin-bottom: 10px;
+    }
+
+    .reframe-content {
+        color: #424242;
+        font-style: italic;
+    }
+
+    .final-answer-divider {
+        margin: 20px 0;
+        border-top: 2px solid #4caf50;
+        padding-top: 10px;
+    }
+
+    .final-answer-header {
+        font-weight: bold;
+        color: #4caf50;
+        font-size: 1.2em;
+        margin-bottom: 10px;
+        text-align: center;
+    }
+
+    .consideration-section {
+        margin: 20px 0;
+        padding: 15px;
+        background-color: #e3f2fd;
+        border-left: 4px solid #1976d2;
+        border-radius: 4px;
+    }
+
+    .consideration-header {
+        font-weight: bold;
+        color: #1976d2;
+        margin-bottom: 10px;
+        font-size: 1.1em;
+    }
+
+    .consideration-content {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .original-query {
+        color: #666;
+        padding: 8px;
+        background-color: #f5f5f5;
+        border-radius: 4px;
+    }
+
+    .arrow {
+        color: #1976d2;
+        text-align: center;
+        font-size: 1.2em;
+    }
+
+    .updated-query {
+        color: #1976d2;
+        padding: 8px;
+        background-color: #bbdefb;
+        border-radius: 4px;
+    }
+
+    .message.system {
+        background-color: #f3e5f5;
+        border-left: 4px solid #9c27b0;
+        color: #666;
+        font-style: italic;
+    }
+
+    .judge-divider {
+        margin: 20px 0;
+        border-top: 2px solid #9c27b0;
+        padding-top: 10px;
+    }
+
+    .judge-header {
+        font-weight: bold;
+        color: #9c27b0;
+        font-size: 1.2em;
+        margin-bottom: 10px;
+        text-align: center;
+    }
+
+    .judge-evaluation {
+        margin: 10px 0;
+        padding: 15px;
+        border-radius: 4px;
+    }
+
+    .judge-evaluation.rewrite {
+        background-color: #ffebee;
+        border-left: 4px solid #f44336;
+    }
+
+    .judge-evaluation.no-rewrite {
+        background-color: #e8f5e9;
+        border-left: 4px solid #4caf50;
+    }
+
+    .judge-content {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .judge-icon {
+        font-size: 1.5em;
+    }
+
+    .judge-text {
+        flex: 1;
+        color: #333;
+    }
+
+    .structured-analysis-section {
+        margin: 20px 0;
+        padding: 15px;
+        background-color: #e8f5e9;
+        border-left: 4px solid #4caf50;
+        border-radius: 4px;
+    }
+
+    .analysis-header {
+        font-weight: bold;
+        color: #388e3c;
+        margin-bottom: 10px;
+    }
+
+    .analysis-content {
+        color: #2e7d32;
+        font-style: italic;
+    }
+
+    .strategic-plan-section {
+        margin: 20px 0;
+        padding: 15px;
+        background-color: #e8f5e9;
+        border-left: 4px solid #4caf50;
+        border-radius: 4px;
+    }
+
+    .plan-header {
+        font-weight: bold;
+        color: #388e3c;
+        margin-bottom: 10px;
+    }
+
+    .plan-content {
+        color: #2e7d32;
+        font-style: italic;
+    }
+
+    .grading-feedback-section {
+        margin: 20px 0;
+        padding: 15px;
+        background-color: #fffde7;
+        border-left: 4px solid #fdd835;
+        border-radius: 4px;
+    }
+
+    .grading-feedback-header {
+        font-weight: bold;
+        color: #fbc02d;
+        margin-bottom: 10px;
+    }
+
+    .grading-feedback-content {
+        color: #f57f17;
+        white-space: pre-wrap;
+    }
+
+    .learning-feedback-section {
+        margin: 20px 0;
+        padding: 15px;
+        background-color: #e1f5fe;
+        border-left: 4px solid #03a9f4;
+        border-radius: 4px;
+    }
+
+    .learning-feedback-header {
+        font-weight: bold;
+        color: #0288d1;
+        margin-bottom: 10px;
+    }
+
+    .learning-feedback-content {
+        color: #01579b;
+        white-space: pre-wrap;
+    }
+
+    .grading-section {
+        margin: 10px 0;
+        padding: 10px;
+        border-left: 3px solid #fdd835;
+        background-color: #fffde7;
+    }
+
+    .section-header {
+        font-weight: bold;
+        color: #f57f17;
+        margin-bottom: 5px;
+    }
+
+    .section-content {
+        white-space: pre-wrap;
+        color: #333;
+        font-family: monospace;
+    }
+
+    .potential-gotcha {
+        color: #d32f2f;
+        font-weight: bold;
+    }
+
+    .test-result-section {
+        margin: 10px 0;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-left: 4px solid #6c757d;
+        border-radius: 4px;
+    }
+
+    .test-header {
+        font-weight: bold;
+        color: #495057;
+        margin-bottom: 5px;
+    }
+
+    .test-content {
+        white-space: pre-wrap;
+        font-family: monospace;
+        color: #212529;
+    }
+
+    .test-pass {
+        border-left-color: #28a745;
+    }
+
+    .test-fail {
+        border-left-color: #dc3545;
+    }
+</style>
