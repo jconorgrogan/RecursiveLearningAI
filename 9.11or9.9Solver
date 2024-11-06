@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Number Breakdown Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #chat-container {
+            border: 1px solid #ccc;
+            padding: 20px;
+            height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+        #input-container {
+            display: flex;
+            gap: 10px;
+        }
+        input {
+            flex-grow: 1;
+            padding: 10px;
+        }
+        button {
+            padding: 10px 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container"></div>
+    <div id="input-container">
+        <input type="text" id="prompt-input" placeholder="Enter your prompt...">
+        <button onclick="sendPrompt()">Send</button>
+        <label>
+            <input type="checkbox" id="local-mode"> Use Local LM Studio
+        </label>
+    </div>
+
+    <script>
+        const API_KEY = 'INSERTYOUROPENAIKEYHERE';
+        const chatContainer = document.getElementById('chat-container');
+        const promptInput = document.getElementById('prompt-input');
+
+        function breakdownNumber(number) {
+            const numStr = number.toString();
+            const [intPart, decPart = ''] = numStr.split('.');
+            
+            let breakdown = [];
+            // Handle integer part
+            for (let i = 0; i < intPart.length; i++) {
+                if (intPart[i] !== '0') {
+                    breakdown.push(intPart[i] + '0'.repeat(intPart.length - i - 1));
+                }
+            }
+            
+            // Handle decimal part
+            for (let i = 0; i < decPart.length; i++) {
+                if (decPart[i] !== '0') {
+                    breakdown.push(`0.${'0'.repeat(i)}${decPart[i]}`);
+                }
+            }
+            
+            return `(${breakdown.join('+')})`;
+        }
+
+        function processPrompt(text) {
+            const numberRegex = /\d+\.?\d*/g;
+            return text.replace(numberRegex, match => breakdownNumber(parseFloat(match)));
+        }
+
+        async function validateResponse(response) {
+            // Check if response contains numbers not in our format
+            const invalidNumberRegex = /\b\d+\.\d+\b|\b\d+\b/g;
+            return !invalidNumberRegex.test(response);
+        }
+
+        function cleanNumberFormat(text) {
+            // Match expressions like (9+0.9) or (900+90+9+0.9+0.09)
+            const expandedNumberRegex = /\((\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*)\)/g;
+            
+            return text.replace(expandedNumberRegex, match => {
+                // Remove parentheses and evaluate the expression
+                const expression = match.slice(1, -1);
+                const sum = expression.split('+')
+                    .reduce((acc, num) => acc + parseFloat(num), 0);
+                return sum.toString();
+            });
+        }
+
+        async function getFormattedResponse(messages, isLocalMode, retryCount = 0) {
+            const maxRetries = 3;
+            const endpoint = isLocalMode 
+                ? 'http://localhost:1234/v1/chat/completions'
+                : 'https://api.openai.com/v1/chat/completions';
+            
+            const headers = {
+                'Content-Type': 'application/json',
+                ...(isLocalMode ? {} : {'Authorization': `Bearer ${API_KEY}`})
+            };
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    model: isLocalMode ? "local-model" : "gpt-3.5-turbo",
+                    messages: messages
+                })
+            });
+
+            const data = await response.json();
+            const aiResponse = data.choices[0].message.content;
+
+            // If response is invalid and we haven't hit max retries, try again
+            if (!await validateResponse(aiResponse) && retryCount < maxRetries) {
+                messages.push({ role: "assistant", content: aiResponse });
+                messages.push({
+                    role: "user",
+                    content: "Please reformat your response to use only the expanded number format (e.g., 9+0.1+0.01 instead of 9.11). Do not use decimal numbers in your response."
+                });
+                return getFormattedResponse(messages, isLocalMode, retryCount + 1);
+            }
+
+            // If response is valid, clean it using the LLM
+            if (await validateResponse(aiResponse)) {
+                const cleaningMessages = [{
+                    role: "system",
+                    content: "You are a helpful assistant that converts expanded number formats back to decimal notation. For example, (9+0.1) should become 9.1. Only convert the numbers, keep all other text exactly the same."
+                }, {
+                    role: "user",
+                    content: aiResponse
+                }];
+
+                const cleaningResponse = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        model: isLocalMode ? "local-model" : "gpt-3.5-turbo",
+                        messages: cleaningMessages
+                    })
+                });
+
+                const cleanedData = await cleaningResponse.json();
+                return cleanedData.choices[0].message.content;
+            }
+
+            // If we've hit max retries and response is still invalid, return as is
+            return aiResponse;
+        }
+
+        async function sendPrompt() {
+            const userPrompt = promptInput.value.trim();
+            if (!userPrompt) return;
+
+            // Display user message
+            chatContainer.innerHTML += `<p><strong>You:</strong> ${userPrompt}</p>`;
+
+            // Process the prompt
+            const processedPrompt = processPrompt(userPrompt);
+
+            try {
+                const isLocalMode = document.getElementById('local-mode').checked;
+                const messages = [{
+                    role: "user",
+                    content: processedPrompt
+                }];
+
+                const aiResponse = await getFormattedResponse(messages, isLocalMode);
+
+                // Display AI response
+                chatContainer.innerHTML += `<p><strong>AI:</strong> ${aiResponse}</p>`;
+            } catch (error) {
+                chatContainer.innerHTML += `<p><strong>Error:</strong> ${error.message}</p>`;
+            }
+
+            // Clear input and scroll to bottom
+            promptInput.value = '';
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Allow Enter key to send prompt
+        promptInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendPrompt();
+            }
+        });
+    </script>
+</body>
+</html> 
