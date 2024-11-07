@@ -1,5 +1,5 @@
 # RecursiveLearningAI
-Really quick-and-dirty example of AI recursive learning. Proof of concept using only one request (Hardcoded example on finding a sentence that isnt in the bible, which o1 struggles with. Would love if more generalizable workflows are made. You can see that a lot of features im working on are dormant in the file itself. 
+Really quick-and-dirty example of AI recursive earning; The TLDR is that you have an LLM create test cases for a user query, then pass another LLM's answer to a user query through those use cases, then have a judge LLM review those responses for logic errors, then have another LLM call collect those learnings and create a new prompt which amends the original user prompt with the learnings of the LLMs iterations
 
 1. Insert your OpenAI key to the "Proofofconcept.html" run and try it.
 
