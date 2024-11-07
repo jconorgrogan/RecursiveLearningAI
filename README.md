@@ -1,9 +1,9 @@
 # RecursiveLearningAI
 Really quick-and-dirty example of AI recursive earning; The TLDR is that you have an LLM create test cases for a user query, then pass another LLM's answer to a user query through those use cases, then have a judge LLM review those responses for logic errors, then have another LLM call collect those learnings and create a new prompt which amends the original user prompt with the learnings of the LLMs iterations
 
-1. Insert your OpenAI key to the "Proofofconcept.html" run and try it.
+ nsert your OpenAI key to the "Proofofconcept.html" run and try it.
 
-**Future exploration ideas ****
+ **Future exploration ideas**
 
 **Example #1: [Not yet in production]**
 
