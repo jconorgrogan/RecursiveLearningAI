@@ -1,5 +1,5 @@
 # RecursiveLearningAI
-Really quick-and-dirty example of AI recursive learning; The TLDR is that we can make AI "Learn" via smart, recursive workflows that rejigger the context window.  Goes as followis:
+Really quick-and-dirty example of AI recursive learning (video in action:https://x.com/jconorgrogan/status/1853943122046144829) ; The TLDR is that we can make AI "Learn" via smart, recursive workflows that rejigger the context window.  Goes as followis:
 
 1. Digest user query. Send towards two paths in parrellel:
 2. Answer query
