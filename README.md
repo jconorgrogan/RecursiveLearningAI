@@ -1,5 +1,14 @@
 # RecursiveLearningAI
-Really quick-and-dirty example of AI recursive earning; The TLDR is that you have an LLM create test cases for a user query, then pass another LLM's answer to a user query through those use cases, then have a judge LLM review those responses for logic errors, then have another LLM call collect those learnings and create a new prompt which amends the original user prompt with the learnings of the LLMs iterations
+Really quick-and-dirty example of AI recursive learning; The TLDR is that we can make AI "Learn" via smart, recursive workflows that rejigger the context window.  Goes as followis:
+
+1. Digest user query. Send towards two paths in parrellel:
+2. Answer query
+3. Have one LLM create test cases for a user query
+4. Then,pass LLM's answer through the tests cases
+5. Have a judge LLM review those responses for logic errors
+6. Another LLM call collects those learnings
+7. They then create a new prompt which amends the original user prompt with the learnings of the LLMs iterations, and sends that through to the model
+8. This process repeats until all logic tests are passed, and the answer is returned to the user
 
 <img width="1479" alt="image" src="https://github.com/user-attachments/assets/8c637b0d-6150-44a0-9c06-48a8352cfe51">
 
