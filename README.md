@@ -10,6 +10,8 @@ Really quick-and-dirty example of AI recursive learning; The TLDR is that we can
 7. They then create a new prompt which amends the original user prompt with the learnings of the LLMs iterations, and sends that through to the model
 8. This process repeats until all logic tests are passed, and the answer is returned to the user
 
+This image is the result of two recursive iterations. The initial starting prompt was, "Construct a sentence where none of the words in that sentence are in the Bible", which o1preview constantly struggles with. As you can see, by the end the "user query" had changed a lot, with learnings 
+
 <img width="1479" alt="image" src="https://github.com/user-attachments/assets/8c637b0d-6150-44a0-9c06-48a8352cfe51">
 
 Insert your OpenAI key to the "Proofofconcept.html" run and try it.
