@@ -1,11 +1,11 @@
 # RecursiveLearningAI
 Really quick-and-dirty example of AI recursive learning. Proof of concept using only one request (Hardcoded example on finding a sentence that isnt in the bible, which o1 struggles with. Would love if more generalizable workflows are made. You can see that a lot of features im working on are dormant in the file itself. 
 
-Insert your OpenAI key to run and try it. 
+1. Insert your OpenAI key to the "Proofofconcept.html" run and try it.
 
-I believe that with enough memory and prompt engineering, 70b models WILL beat 4o out of the gate:
+**Future exploration ideas ****
 
-Example #1:
+Example #1: [Not yet in production]
 
 1. Input prompt, have llm break down goal to the most basic components 
 2. test those components, individually, each with a context wiped new pull 
@@ -15,8 +15,7 @@ Example #1:
 6. Have an LLM then synthesize the best possible answer given original goal
 7. Return to user
 
-
-Example #2; introspective/entropix-esque
+Example #2; introspective/entropix-esque [Not yet in production]
 1. User query
 2.  LLM responds
 3.Overseer LLM #1  Check branches of that response to assess alternate answers possibilities
@@ -25,3 +24,9 @@ Example #2; introspective/entropix-esque
 6. LLM responds given best answer
 7. you can even loop this if you want to, eg if there are branches in best answer from the entropy/varentropy profile
 8. Return that answer to user, via an LLM that is focused on response formatting/user objective
+
+Example #3 Introspective pruning- [See 9.11or9.9Solver html file for proof-of-concept which has an LLM replace any numbers like 9.11 (which fire calandar-related activations) with short math equations (9+0.11)]
+1. User querys
+2. LLM responds
+3. LLM reviews neuron activations, if any fire in domains that are counter to the user goal, seek to clamp those down
+4. Alter context/prompt with tokens that still compress the user goal, but in a way that uses tokens that minimize neuron activation for activity that could negatively impact the output
