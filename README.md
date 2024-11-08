@@ -1,14 +1,15 @@
 # RecursiveLearningAI
-Really quick-and-dirty example of AI recursive learning (video in action:https://x.com/jconorgrogan/status/1853943122046144829) ; The TLDR is that we can make AI "Learn" via smart, recursive workflows that rejigger the context window.  Goes as followis:
+Really quick-and-dirty example of AI recursive learning (video in action:https://x.com/jconorgrogan/status/1853943122046144829) ; The TLDR is that we can make AI "Learn" via smart, recursive workflows that rejigger the context window. Goes as follows:
 
-1. Digest user query. Send towards two paths in parrellel:
-2. Answer query
-3. Have one LLM create test cases for a user query
-4. Then,pass LLM's answer through the tests cases
-5. Have a judge LLM review those responses for logic errors
+1. Digest user query. Send towards two paths:
+2a. Answer query
+2b. Have one LLM create test cases for that query
+4. We then combine 2a and 2b, passing query through those test cases 
+5. Have a judge LLM review those responses for logic errors. Ideally the testing step is broken down to the most basic components and the judge just reviews pass/fail based on simple criteria
 6. Another LLM call collects those learnings
-7. They then create a new prompt which amends the original user prompt with the learnings of the LLMs iterations, and sends that through to the model
-8. This process repeats until all logic tests are passed, and the answer is returned to the user
+7. This LLM then creates a new prompt which amends the original user prompt with the learnings of the LLMs iterations, and sends that through to the model
+8. This process loops back to 2a until all logic tests are passed, breaking the loop
+9. The answer is cleaned up by another LLM returned to the user
 
 This image is the result of two recursive iterations. The initial starting prompt was, "Construct a sentence where none of the words in that sentence are in the Bible", which o1preview constantly struggles with. As you can see, by the end the "user query" had changed a lot, with learnings 
 
