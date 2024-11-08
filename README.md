@@ -6,8 +6,8 @@ Really quick-and-dirty example of AI recursive learning (video in action:https:/
 2b. Have one LLM create test cases for that query
 4. We then combine 2a and 2b, passing the llm best answer through those test cases 
 5. Have a judge LLM review those responses for logic errors. Ideally the testing step is broken down to the most basic components and the judge just reviews pass/fail based on simple criteria
-6. Another LLM call collects those learnings
-7. This LLM then creates a new prompt which amends the original user prompt with the learnings of the LLMs iterations, and sends that through to the model
+6. Another LLM with a new context window collects those learnings (if there are any fails) 
+7. This LLM then creates a new prompt which amends the original user prompt with the learnings of the LLMs iterations, and sends that through to the model as part of a new context window 
 8. This process loops back to 2a until all logic tests are passed, breaking the loop
 9. The answer is cleaned up by another LLM returned to the user
 
